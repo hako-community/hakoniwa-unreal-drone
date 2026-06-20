@@ -22,7 +22,7 @@ public:
     FString AssetName = "UnrealAsset";
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hakoniwa")
-    bool bAutoInitialize = false;
+    bool bAutoInitialize = true;
 
     virtual void Start_Implementation() override;
     virtual void Stop_Implementation() override;
@@ -48,5 +48,6 @@ private:
     long long asset_time_usec = 0;
     long long delta_time_usec = 1000; // 1ms default
 
+    bool EnsureRuntimeObjects();
     void PreDeclareAllPDUs();
 };

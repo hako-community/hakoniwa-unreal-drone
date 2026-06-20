@@ -42,8 +42,13 @@ uint32 FShmWorker::Run()
     int32 PollReadCount = 0;
     int32 MotorDirtyCount = 0;
     int32 MotorReadCount = 0;
+    int32 MotorReadFailCount = 0;
+    int32 DeclaredReaderCount = 0;
+    int32 CheckedReaderCount = 0;
     uint64 LatestMotorCounter = 0;
     int32 LatestMotorSize = 0;
+    FString DeclaredReaderSummary;
+    bool bLoggedReaderSummary = false;
 
     while (!bStopThread)
     {
@@ -59,11 +64,34 @@ uint32 FShmWorker::Run()
         bool bPosReadThisPoll = false;
         bool bMotorDirtyThisPoll = false;
         bool bMotorReadThisPoll = false;
+        bool bMotorReadFailedThisPoll = false;
 
         if (CommBuffer)
         {
             const FPduChannelConfigStruct& ChannelConfig = CommBuffer->GetChannelConfig();
             bool bIsUpdated = false;
+            if (!bLoggedReaderSummary)
+            {
+                int32 ConfigReaderCount = 0;
+                for (const FRobotConfig& Robot : ChannelConfig.robots)
+                {
+                    for (const FPduChannel& Ch : Robot.shm_pdu_readers)
+                    {
+                        ++ConfigReaderCount;
+                        DeclaredReaderSummary += FString::Printf(TEXT("%s:%s(ch=%d,size=%d,decl=%d); "),
+                            *Robot.name,
+                            *Ch.org_name,
+                            Ch.channel_id,
+                            Ch.pdu_size,
+                            CommBuffer->IsPduDeclaredForRead(Robot.name, Ch.channel_id) ? 1 : 0);
+                    }
+                }
+                UE_LOG(LogTemp, Log, TEXT("[HakoPDU][ShmReaders] asset=%s configured=%d readers=%s"),
+                    *AssetName,
+                    ConfigReaderCount,
+                    *DeclaredReaderSummary);
+                bLoggedReaderSummary = true;
+            }
 
             for (const FRobotConfig& Robot : ChannelConfig.robots)
             {
@@ -73,6 +101,8 @@ uint32 FShmWorker::Run()
                     {
                         continue;
                     }
+                    ++DeclaredReaderCount;
+                    ++CheckedReaderCount;
                     if (hako_asset_is_pdu_dirty(TCHAR_TO_ANSI(*AssetName), TCHAR_TO_ANSI(*Robot.name), Ch.channel_id))
                     {
                         TArray<uint8> PduData;
@@ -138,6 +168,7 @@ uint32 FShmWorker::Run()
                         else if (Ch.org_name == TEXT("motor"))
                         {
                             bMotorDirtyThisPoll = true;
+                            bMotorReadFailedThisPoll = true;
                         }
                     }
                 }
@@ -165,6 +196,10 @@ uint32 FShmWorker::Run()
         {
             ++MotorReadCount;
         }
+        if (bMotorReadFailedThisPoll)
+        {
+            ++MotorReadFailCount;
+        }
 
 #if HAKO_PDU_LATENCY_LOG || HAKO_PROP_STATS_LOG
         const double PollNow = FPlatformTime::Seconds();
@@ -185,12 +220,15 @@ uint32 FShmWorker::Run()
                 FPlatformTLS::GetCurrentThreadId());
 #endif
 #if HAKO_PROP_STATS_LOG
-            UE_LOG(LogTemp, Log, TEXT("[HakoProp][RecvStats] asset=%s sleep=%.3f samples=%d dirty=%d read=%d latest_counter=%llu latest_size=%d thread=%u"),
+            UE_LOG(LogTemp, Log, TEXT("[HakoProp][RecvStats] asset=%s sleep=%.3f samples=%d declared_checks=%d reader_checks=%d dirty=%d read=%d read_fail=%d latest_counter=%llu latest_size=%d thread=%u"),
                 *AssetName,
                 CurrentSleepSec,
                 PollSampleCount,
+                DeclaredReaderCount,
+                CheckedReaderCount,
                 MotorDirtyCount,
                 MotorReadCount,
+                MotorReadFailCount,
                 static_cast<unsigned long long>(LatestMotorCounter),
                 LatestMotorSize,
                 FPlatformTLS::GetCurrentThreadId());
@@ -205,6 +243,9 @@ uint32 FShmWorker::Run()
             PollReadCount = 0;
             MotorDirtyCount = 0;
             MotorReadCount = 0;
+            MotorReadFailCount = 0;
+            DeclaredReaderCount = 0;
+            CheckedReaderCount = 0;
         }
 #endif
 

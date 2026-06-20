@@ -16,34 +16,64 @@ void AHakoniwaShmClient::BeginPlay()
 
     UE_LOG(LogTemp, Log, TEXT("AHakoniwaShmClient BeginPlay()"));
 
-    const FName ModuleName = "HakoniwaPdu";
-    if (!FModuleManager::Get().IsModuleLoaded(ModuleName))
+    if (!EnsureRuntimeObjects())
     {
-        FModuleManager::Get().LoadModule(ModuleName);
+        UE_LOG(LogTemp, Error, TEXT("AHakoniwaShmClient BeginPlay() - Failed to create runtime objects."));
+        return;
     }
-
-    if (pduManager) return;
-
-    service = NewObject<UShmCommunicationService>(this);
-    pduManager = NewObject<UPduManager>(this);
 
     if (bAutoInitialize)
     {
-        InitializeClient();
+        UE_LOG(LogTemp, Log, TEXT("AHakoniwaShmClient BeginPlay() - Auto initializing client."));
+        if (!InitializeClient())
+        {
+            UE_LOG(LogTemp, Error, TEXT("AHakoniwaShmClient BeginPlay() - Auto initialization failed."));
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("AHakoniwaShmClient BeginPlay() - Auto initialization is disabled. START UI may stay disabled until InitializeClient is called."));
     }
 }
 
 void AHakoniwaShmClient::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    if (pduManager && pduManager->IsServiceEnabled())
+    if (pduManager && service && service->IsServiceEnabled())
     {
         pduManager->StopService();
     }
     Super::EndPlay(EndPlayReason);
 }
 
+bool AHakoniwaShmClient::EnsureRuntimeObjects()
+{
+    const FName ModuleName = "HakoniwaPdu";
+    if (!FModuleManager::Get().IsModuleLoaded(ModuleName))
+    {
+        FModuleManager::Get().LoadModule(ModuleName);
+    }
+
+    if (!service)
+    {
+        service = NewObject<UShmCommunicationService>(this);
+    }
+
+    if (!pduManager)
+    {
+        pduManager = NewObject<UPduManager>(this);
+    }
+
+    return service != nullptr && pduManager != nullptr;
+}
+
 bool AHakoniwaShmClient::InitializeClient()
 {
+    if (!EnsureRuntimeObjects())
+    {
+        UE_LOG(LogTemp, Error, TEXT("AHakoniwaShmClient::InitializeClient - Failed to create runtime objects."));
+        return false;
+    }
+
     if (service && service->IsServiceEnabled())
     {
         UE_LOG(LogTemp, Warning, TEXT("AHakoniwaShmClient::InitializeClient - Already initialized. Skipping."));
@@ -123,6 +153,21 @@ void AHakoniwaShmClient::Tick(float DeltaTime)
     // Heartbeat
     hako_asset_notify_simtime(TCHAR_TO_ANSI(*AssetName), asset_time_usec);
 
+    static double LastRuntimeStateLogTime = 0.0;
+    const double Now = FPlatformTime::Seconds();
+    if ((Now - LastRuntimeStateLogTime) >= 1.0)
+    {
+        LastRuntimeStateLogTime = Now;
+        UE_LOG(LogTemp, Log, TEXT("[HakoRuntime][State] asset=%s sim_state=%d pdu_created=%d sim_mode=%d pdu_sync_mode=%d asset_time_usec=%lld world_time=%lld"),
+            *AssetName,
+            hako_simevent_get_state(),
+            hako_asset_is_pdu_created() ? 1 : 0,
+            hako_asset_is_simulation_mode() ? 1 : 0,
+            hako_asset_is_pdu_sync_mode(TCHAR_TO_ANSI(*AssetName)) ? 1 : 0,
+            asset_time_usec,
+            static_cast<long long>(hako_asset_get_worldtime()));
+    }
+
     // Event Polling
     int ev = hako_asset_get_event(TCHAR_TO_ANSI(*AssetName));
     switch (ev)
@@ -175,18 +220,40 @@ void AHakoniwaShmClient::Tick(float DeltaTime)
 
 void AHakoniwaShmClient::Start_Implementation()
 {
+    if (!service || !service->IsServiceEnabled())
+    {
+        UE_LOG(LogTemp, Log, TEXT("AHakoniwaShmClient Start() - Initializing client before start."));
+        if (!InitializeClient())
+        {
+            UE_LOG(LogTemp, Error, TEXT("AHakoniwaShmClient Start() - InitializeClient failed. Start canceled."));
+            return;
+        }
+    }
+
     UE_LOG(LogTemp, Log, TEXT("AHakoniwaShmClient Start() - Sending simevent_start"));
     hako_simevent_start();
 }
 
 void AHakoniwaShmClient::Stop_Implementation()
 {
+    if (!service || !service->IsServiceEnabled())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("AHakoniwaShmClient Stop() - Client is not initialized."));
+        return;
+    }
+
     UE_LOG(LogTemp, Log, TEXT("AHakoniwaShmClient Stop() - Sending simevent_stop"));
     hako_simevent_stop();
 }
 
 void AHakoniwaShmClient::Reset_Implementation()
 {
+    if (!service || !service->IsServiceEnabled())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("AHakoniwaShmClient Reset() - Client is not initialized."));
+        return;
+    }
+
     UE_LOG(LogTemp, Log, TEXT("AHakoniwaShmClient Reset() - Sending simevent_reset"));
     hako_simevent_reset();
 }
@@ -195,7 +262,7 @@ int32 AHakoniwaShmClient::GetSimulationState_Implementation() const
 {
     if (!service || !service->IsServiceEnabled())
     {
-        return -1; // Unknown/Not Initialized
+        return 0; // Treat uninitialized as stopped so the UI can trigger Start().
     }
     return hako_simevent_get_state();
 }

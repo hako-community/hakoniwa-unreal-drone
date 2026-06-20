@@ -90,7 +90,6 @@ public:
         // �������`�F�b�N
         if (!bIsInitialized)
         {
-            UE_LOG(LogTemp, Warning, TEXT("UPduManager not initialized"));
             return false;
         }
 
@@ -196,6 +195,11 @@ public:
             return TEXT("");
         }
         return CommBuffer->GetDefaultRobotName();
+    }
+
+    bool IsInitialized() const
+    {
+        return bIsInitialized;
     }
 
     TArray<FString> GetRobotNames() const
