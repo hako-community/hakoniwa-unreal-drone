@@ -81,5 +81,9 @@ Plugins/**/Intermediate/*
 *.exp
 *.pdb
 
+# External Hakoniwa native SDKs are installed locally for Win64 builds.
+Plugins/HakoniwaPdu/Source/ThirdParty/shakoc/
+Plugins/HakoniwaDroneService/Source/ThirdParty/hako_service_c/
+
 # Cache files for the editor to use
 DerivedDataCache/*

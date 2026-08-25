@@ -1,7 +1,7 @@
 # Hakoniwa Unreal Drone
 
 このリポジトリは、箱庭ドローンシミュレータのビジュアライズ機能を提供する Unreal Engine プロジェクトです。
-Unreal Engine 5.6 を使用し、WebSocket または共有メモリ経由で取得した PDU 情報からドローンの状態を描画します。
+Unreal Engine 5.8 を使用し、WebSocket または共有メモリ経由で取得した PDU 情報からドローンの状態を描画します。
 
 
 ## セットアップ
@@ -10,21 +10,28 @@ Unreal Engine 5.6 を使用し、WebSocket または共有メモリ経由で取�
    ```bash
    git clone <repository_url>
    ```
-2. Unreal Engine 5.6 以降をインストールします。
+2. Unreal Engine 5.8 をインストールします。
 3. `HakoniwaDrone.uproject` を Unreal Editor で開きます。
-4. 必要な外部依存を配置し、ビルドを実行してプロジェクトを起動します。
+4. 必要な外部SDKをインストールし、ビルドを実行してプロジェクトを起動します。
+
+Windowsでは、環境変数または標準インストール先から外部依存物を検証し、Editorビルドを次のスクリプトで実行できます。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\setup_build.ps1
+```
+
+詳細とオプションは [docs/dependencies.md](docs/dependencies.md) を参照してください。
 
 ## 外部依存
 
 このリポジトリには、以下の外部コンポーネント本体およびネイティブバイナリは含めていません。
 
-- `hakoniwa-pdu-unreal`
 - `shakoc`
 - `hako_service_c`
 
-`HakoniwaDrone.uproject` では `HakoniwaPdu` プラグインを有効化しているため、ビルド時には `hakoniwa-pdu-unreal` を `Plugins/HakoniwaPdu` に配置する必要があります。`shakoc` と `hako_service_c` はネイティブライブラリとして別途配置が必要です。
+`HakoniwaPdu` プラグインのソースは本リポジトリに含まれます。`shakoc` と `hako_service_c` はネイティブライブラリとして別途インストールが必要です。
 
-配置先の詳細は [docs/dependencies.md](docs/dependencies.md) を参照してください。依存物の取得元、ビルド方法、バージョン固定方法は今後のビルド手順で整理します。
+環境変数、標準インストール先、フォールバック配置の詳細は [docs/dependencies.md](docs/dependencies.md) を参照してください。依存物の取得元、ビルド方法、バージョン固定方法は今後のビルド手順で整理します。
 
 ## 対応モード
 

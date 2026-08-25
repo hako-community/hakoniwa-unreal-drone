@@ -1,8 +1,13 @@
 #include "HakoDroneServiceRc.h"
 
+#include "HAL/PlatformMisc.h"
 #include "HAL/PlatformProcess.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/Paths.h"
+
+#ifndef HAKO_DRONE_DLL_PATH_FALLBACK
+#define HAKO_DRONE_DLL_PATH_FALLBACK ""
+#endif
 
 #if PLATFORM_WINDOWS
 extern "C"
@@ -42,6 +47,43 @@ namespace
 {
 void* GHakoServiceDllHandle = nullptr;
 
+FString ResolveHakoServiceDllPath()
+{
+	TArray<FString> CandidateDirs;
+
+	const FString EnvDir = FPlatformMisc::GetEnvironmentVariable(TEXT("HAKO_DRONE_DLL_PATH"));
+	if (!EnvDir.IsEmpty())
+	{
+		CandidateDirs.Add(EnvDir);
+	}
+
+	const FString LocalAppDataDir = FPlatformMisc::GetEnvironmentVariable(TEXT("LOCALAPPDATA"));
+	if (!LocalAppDataDir.IsEmpty())
+	{
+		CandidateDirs.Add(LocalAppDataDir / TEXT("hakoApps-win/hakoSim/bin"));
+	}
+
+	const FString BuildDir = FString(UTF8_TO_TCHAR(HAKO_DRONE_DLL_PATH_FALLBACK));
+	if (!BuildDir.IsEmpty())
+	{
+		CandidateDirs.Add(BuildDir);
+	}
+
+	CandidateDirs.Add(FPaths::ProjectDir() / TEXT("Binaries/Win64"));
+
+	for (FString CandidateDir : CandidateDirs)
+	{
+		FPaths::NormalizeFilename(CandidateDir);
+		const FString CandidatePath = FPaths::ConvertRelativePathToFull(CandidateDir / TEXT("hako_service_c.dll"));
+		if (FPaths::FileExists(CandidatePath))
+		{
+			return CandidatePath;
+		}
+	}
+
+	return FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("Binaries/Win64/hako_service_c.dll"));
+}
+
 const char* EmptyToNull(const FTCHARToUTF8& Converted, const FString& Original)
 {
 	return Original.IsEmpty() ? nullptr : Converted.Get();
@@ -56,7 +98,7 @@ bool FHakoDroneServiceRc::LoadDll(FString* OutError)
 		return true;
 	}
 
-	const FString DllPath = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("Binaries/Win64/hako_service_c.dll"));
+	const FString DllPath = ResolveHakoServiceDllPath();
 	if (!FPaths::FileExists(DllPath))
 	{
 		if (OutError)
