@@ -7,6 +7,9 @@
 #include "HakoniwaClientInterface.h"
 #include "HakoniwaShmClient.generated.h"
 
+class FHakoniwaTimeSyncWorker;
+class FRunnableThread;
+
 UCLASS(Blueprintable, BlueprintType)
 class HAKONIWADRONE_API AHakoniwaShmClient : public AActor, public IHakoniwaClientInterface
 {
@@ -23,6 +26,15 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hakoniwa")
     bool bAutoInitialize = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hakoniwa|Time Sync")
+    bool bEnableRealTimePacing = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hakoniwa|Time Sync", meta = (ClampMin = "0.01"))
+    float TargetRealTimeFactor = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hakoniwa|Time Sync", meta = (ClampMin = "1", ClampMax = "20"))
+    int32 TimeSyncIntervalMsec = 5;
 
     virtual void Start_Implementation() override;
     virtual void Stop_Implementation() override;
@@ -45,9 +57,11 @@ private:
     UPROPERTY()
     UPduManager* pduManager = nullptr;
 
-    long long asset_time_usec = 0;
-    long long delta_time_usec = 1000; // 1ms default
+    FHakoniwaTimeSyncWorker* TimeSyncWorker = nullptr;
+    FRunnableThread* TimeSyncThread = nullptr;
 
     bool EnsureRuntimeObjects();
     void PreDeclareAllPDUs();
+    bool StartTimeSyncWorker();
+    void StopTimeSyncWorker();
 };

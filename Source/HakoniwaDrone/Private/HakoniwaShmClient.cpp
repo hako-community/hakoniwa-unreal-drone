@@ -4,6 +4,221 @@
 #include "HakoniwaObjectInterface.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/Paths.h"
+#include "HAL/PlatformProcess.h"
+#include "HAL/PlatformTime.h"
+#include "HAL/Runnable.h"
+#include "HAL/RunnableThread.h"
+
+class FHakoniwaTimeSyncWorker final : public FRunnable
+{
+public:
+    FHakoniwaTimeSyncWorker(
+        const FString& InAssetName,
+        bool bInEnableRealTimePacing,
+        double InTargetRealTimeFactor,
+        int32 InIntervalMsec)
+        : AssetName(InAssetName)
+        , bEnableRealTimePacing(bInEnableRealTimePacing)
+        , TargetRealTimeFactor(FMath::Max(0.01, InTargetRealTimeFactor))
+        , IntervalSec(FMath::Clamp(InIntervalMsec, 1, 20) / 1000.0)
+    {
+    }
+
+    virtual uint32 Run() override
+    {
+        UE_LOG(LogTemp, Log, TEXT("[HakoRuntime][TimeSync] asset=%s worker_started=1 pacing=%d target_rtf=%.3f interval_ms=%.3f"),
+            *AssetName, bEnableRealTimePacing ? 1 : 0, TargetRealTimeFactor, IntervalSec * 1000.0);
+
+        while (!bStopRequested)
+        {
+            const double LoopStartWallTime = FPlatformTime::Seconds();
+            ProcessOnce(LoopStartWallTime);
+
+            const double WorkSec = FPlatformTime::Seconds() - LoopStartWallTime;
+            const float SleepSec = static_cast<float>(FMath::Max(0.0, IntervalSec - WorkSec));
+            if (SleepSec > 0.0f)
+            {
+                FPlatformProcess::SleepNoStats(SleepSec);
+            }
+        }
+
+        UE_LOG(LogTemp, Log, TEXT("[HakoRuntime][TimeSync] asset=%s worker_stopped=1"), *AssetName);
+        return 0;
+    }
+
+    virtual void Stop() override
+    {
+        bStopRequested = true;
+    }
+
+private:
+    void ResetPacing()
+    {
+        bPacingInitialized = false;
+        bRtfSampleValid = false;
+    }
+
+    void ProcessOnce(double Now)
+    {
+        const double LoopGapSec = LastLoopWallTime > 0.0 ? Now - LastLoopWallTime : 0.0;
+        LastLoopWallTime = Now;
+
+        const int Event = hako_asset_get_event(TCHAR_TO_ANSI(*AssetName));
+        switch (Event)
+        {
+        case 1: // HakoSimAssetEvent_Start
+            AssetTimeUsec = 0;
+            bAwaitingStart = false;
+            ResetPacing();
+            UE_LOG(LogTemp, Log, TEXT("Hako Event: START"));
+            hako_asset_start_feedback(TCHAR_TO_ANSI(*AssetName), true);
+            break;
+        case 2: // HakoSimAssetEvent_Stop
+            bAwaitingStart = true;
+            ResetPacing();
+            UE_LOG(LogTemp, Log, TEXT("Hako Event: STOP"));
+            hako_asset_stop_feedback(TCHAR_TO_ANSI(*AssetName), true);
+            break;
+        case 3: // HakoSimAssetEvent_Reset
+            AssetTimeUsec = 0;
+            bAwaitingStart = true;
+            ResetPacing();
+            UE_LOG(LogTemp, Log, TEXT("Hako Event: RESET"));
+            hako_asset_reset_feedback(TCHAR_TO_ANSI(*AssetName), true);
+            break;
+        default:
+            break;
+        }
+
+        const int SimState = hako_simevent_get_state();
+        const bool bPduCreated = hako_asset_is_pdu_created();
+        const bool bPduSyncMode = hako_asset_is_pdu_sync_mode(TCHAR_TO_ANSI(*AssetName));
+        const bool bSimulationMode = hako_asset_is_simulation_mode();
+        const long long WorldTimeUsec = static_cast<long long>(hako_asset_get_worldtime());
+        const bool bHeartbeatDue = (Now - LastSimtimeNotifyWallTime) >= 1.0;
+        bool bNotifySimtime = false;
+        bool bWritePduDone = false;
+        long long PacingTargetUsec = AssetTimeUsec;
+        long long PreNotifyLagUsec = WorldTimeUsec >= 0 ? WorldTimeUsec - AssetTimeUsec : 0;
+
+        if (SimState != 2 /* Running */)
+        {
+            bNotifySimtime = (SimState == 0 || SimState == 1) && bHeartbeatDue;
+            ResetPacing();
+        }
+        else if (bPduCreated && !bAwaitingStart)
+        {
+            if (bPduSyncMode)
+            {
+                hako_asset_notify_write_pdu_done(TCHAR_TO_ANSI(*AssetName));
+                bWritePduDone = true;
+                ResetPacing();
+            }
+            else if (bSimulationMode && WorldTimeUsec >= 0)
+            {
+                // A debugger break or machine sleep must not cause an unbounded
+                // fast-forward toward wall time when this process resumes.
+                const bool bLongWorkerPause = LoopGapSec > FMath::Max(0.25, IntervalSec * 10.0);
+                if (!bPacingInitialized || WorldTimeUsec < LastObservedWorldTimeUsec || bLongWorkerPause)
+                {
+                    PacingBaseWallTime = Now;
+                    PacingBaseSimTimeUsec = WorldTimeUsec;
+                    AssetTimeUsec = WorldTimeUsec;
+                    bPacingInitialized = true;
+                    bRtfSampleValid = false;
+                    if (bLongWorkerPause)
+                    {
+                        ++PacingRebaseCount;
+                    }
+                }
+
+                if (bEnableRealTimePacing)
+                {
+                    const double ElapsedWallSec = FMath::Max(0.0, Now - PacingBaseWallTime);
+                    PacingTargetUsec = PacingBaseSimTimeUsec
+                        + static_cast<long long>(ElapsedWallSec * TargetRealTimeFactor * 1000000.0);
+                    PacingTargetUsec = FMath::Min(PacingTargetUsec, WorldTimeUsec);
+                }
+                else
+                {
+                    PacingTargetUsec = WorldTimeUsec;
+                }
+
+                if (PacingTargetUsec > AssetTimeUsec)
+                {
+                    AssetTimeUsec = PacingTargetUsec;
+                    bNotifySimtime = true;
+                }
+                else if (PacingTargetUsec == AssetTimeUsec && bHeartbeatDue)
+                {
+                    bNotifySimtime = true;
+                }
+            }
+        }
+
+        if (bNotifySimtime)
+        {
+            const double NotifyIntervalMs = LastSimtimeNotifyWallTime > 0.0
+                ? (Now - LastSimtimeNotifyWallTime) * 1000.0
+                : 0.0;
+            MaxNotifyIntervalMs = FMath::Max(MaxNotifyIntervalMs, NotifyIntervalMs);
+            ++NotifyCount;
+            hako_asset_notify_simtime(TCHAR_TO_ANSI(*AssetName), AssetTimeUsec);
+            LastSimtimeNotifyWallTime = Now;
+        }
+
+        const bool bCanMeasureRtf = SimState == 2 && bPduCreated && bSimulationMode
+            && !bPduSyncMode && !bAwaitingStart && WorldTimeUsec >= 0;
+        if (!bCanMeasureRtf || WorldTimeUsec < LastObservedWorldTimeUsec)
+        {
+            bRtfSampleValid = false;
+        }
+        LastObservedWorldTimeUsec = WorldTimeUsec;
+
+        if ((Now - LastRuntimeStateLogTime) >= 1.0)
+        {
+            const double WallDeltaSec = LastRuntimeStateLogTime > 0.0 ? Now - LastRuntimeStateLogTime : 0.0;
+            const bool bRtfValid = bRtfSampleValid && bCanMeasureRtf && WallDeltaSec > 0.0;
+            const long long WorldDeltaUsec = bRtfValid ? WorldTimeUsec - LastLoggedWorldTimeUsec : 0;
+            const double Rtf = bRtfValid ? static_cast<double>(WorldDeltaUsec) / (WallDeltaSec * 1000000.0) : 0.0;
+            const long long LagUsec = WorldTimeUsec >= 0 ? WorldTimeUsec - AssetTimeUsec : 0;
+            UE_LOG(LogTemp, Log, TEXT("[HakoRuntime][State] asset=%s sim_state=%d pdu_created=%d sim_mode=%d pdu_sync_mode=%d world_time_usec=%lld asset_time_usec=%lld lag_usec=%lld pre_notify_lag_usec=%lld pacing_target_usec=%lld world_delta_usec=%lld wall_time_sec=%.6f wall_delta_sec=%.6f rtf=%.6f rtf_valid=%d world_time_valid=%d simtime_notified=%d write_pdu_done=%d awaiting_start=%d pacing=%d target_rtf=%.3f notify_count=%llu max_notify_interval_ms=%.3f pacing_rebase_count=%llu"),
+                *AssetName, SimState, bPduCreated ? 1 : 0, bSimulationMode ? 1 : 0, bPduSyncMode ? 1 : 0,
+                WorldTimeUsec, AssetTimeUsec, LagUsec, PreNotifyLagUsec, PacingTargetUsec, WorldDeltaUsec,
+                Now, WallDeltaSec, Rtf, bRtfValid ? 1 : 0, WorldTimeUsec >= 0 ? 1 : 0,
+                bNotifySimtime ? 1 : 0, bWritePduDone ? 1 : 0, bAwaitingStart ? 1 : 0,
+                bEnableRealTimePacing ? 1 : 0, TargetRealTimeFactor,
+                static_cast<unsigned long long>(NotifyCount), MaxNotifyIntervalMs,
+                static_cast<unsigned long long>(PacingRebaseCount));
+            LastRuntimeStateLogTime = Now;
+            LastLoggedWorldTimeUsec = WorldTimeUsec;
+            bRtfSampleValid = bCanMeasureRtf;
+            NotifyCount = 0;
+            MaxNotifyIntervalMs = 0.0;
+            PacingRebaseCount = 0;
+        }
+    }
+
+    FString AssetName;
+    bool bEnableRealTimePacing = true;
+    double TargetRealTimeFactor = 1.0;
+    double IntervalSec = 0.005;
+    FThreadSafeBool bStopRequested = false;
+    long long AssetTimeUsec = 0;
+    bool bAwaitingStart = false;
+    bool bPacingInitialized = false;
+    double PacingBaseWallTime = 0.0;
+    double LastLoopWallTime = 0.0;
+    long long PacingBaseSimTimeUsec = 0;
+    double LastSimtimeNotifyWallTime = 0.0;
+    double LastRuntimeStateLogTime = 0.0;
+    long long LastLoggedWorldTimeUsec = 0;
+    long long LastObservedWorldTimeUsec = -1;
+    bool bRtfSampleValid = false;
+    uint64 NotifyCount = 0;
+    uint64 PacingRebaseCount = 0;
+    double MaxNotifyIntervalMs = 0.0;
+};
 
 AHakoniwaShmClient::AHakoniwaShmClient()
 {
@@ -38,6 +253,7 @@ void AHakoniwaShmClient::BeginPlay()
 
 void AHakoniwaShmClient::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    StopTimeSyncWorker();
     if (pduManager && service && service->IsServiceEnabled())
     {
         pduManager->StopService();
@@ -126,6 +342,13 @@ bool AHakoniwaShmClient::InitializeClient()
     UE_LOG(LogTemp, Log, TEXT("Notifying all Hakoniwa objects for PDU declaration..."));
     PreDeclareAllPDUs();
 
+    if (!StartTimeSyncWorker())
+    {
+        UE_LOG(LogTemp, Error, TEXT("AHakoniwaShmClient::InitializeClient - Failed to start time sync worker."));
+        pduManager->StopService();
+        return false;
+    }
+
     UE_LOG(LogTemp, Log, TEXT("AHakoniwaShmClient initialized successfully."));
     return true;
 }
@@ -144,77 +367,46 @@ void AHakoniwaShmClient::PreDeclareAllPDUs()
 void AHakoniwaShmClient::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
+}
 
-    if (!pduManager || !service || !service->IsServiceEnabled())
+bool AHakoniwaShmClient::StartTimeSyncWorker()
+{
+    if (TimeSyncThread || TimeSyncWorker)
     {
-        return;
+        return true;
     }
 
-    // Heartbeat
-    hako_asset_notify_simtime(TCHAR_TO_ANSI(*AssetName), asset_time_usec);
-
-    static double LastRuntimeStateLogTime = 0.0;
-    const double Now = FPlatformTime::Seconds();
-    if ((Now - LastRuntimeStateLogTime) >= 1.0)
+    TimeSyncWorker = new FHakoniwaTimeSyncWorker(
+        AssetName,
+        bEnableRealTimePacing,
+        static_cast<double>(TargetRealTimeFactor),
+        TimeSyncIntervalMsec);
+    TimeSyncThread = FRunnableThread::Create(TimeSyncWorker, TEXT("HakoniwaTimeSyncWorker"));
+    if (!TimeSyncThread)
     {
-        LastRuntimeStateLogTime = Now;
-        UE_LOG(LogTemp, Log, TEXT("[HakoRuntime][State] asset=%s sim_state=%d pdu_created=%d sim_mode=%d pdu_sync_mode=%d asset_time_usec=%lld world_time=%lld"),
-            *AssetName,
-            hako_simevent_get_state(),
-            hako_asset_is_pdu_created() ? 1 : 0,
-            hako_asset_is_simulation_mode() ? 1 : 0,
-            hako_asset_is_pdu_sync_mode(TCHAR_TO_ANSI(*AssetName)) ? 1 : 0,
-            asset_time_usec,
-            static_cast<long long>(hako_asset_get_worldtime()));
+        delete TimeSyncWorker;
+        TimeSyncWorker = nullptr;
+        return false;
     }
+    return true;
+}
 
-    // Event Polling
-    int ev = hako_asset_get_event(TCHAR_TO_ANSI(*AssetName));
-    switch (ev)
+void AHakoniwaShmClient::StopTimeSyncWorker()
+{
+    if (TimeSyncWorker)
     {
-    case 1: // HakoSimAssetEvent_Start
-        UE_LOG(LogTemp, Log, TEXT("Hako Event: START"));
-        hako_asset_start_feedback(TCHAR_TO_ANSI(*AssetName), true);
-        break;
-    case 2: // HakoSimAssetEvent_Stop
-        UE_LOG(LogTemp, Log, TEXT("Hako Event: STOP"));
-        hako_asset_stop_feedback(TCHAR_TO_ANSI(*AssetName), true);
-        break;
-    case 3: // HakoSimAssetEvent_Reset
-        UE_LOG(LogTemp, Log, TEXT("Hako Event: RESET"));
-        asset_time_usec = 0;
-        hako_asset_reset_feedback(TCHAR_TO_ANSI(*AssetName), true);
-        break;
-    default:
-        break;
+        TimeSyncWorker->Stop();
     }
-
-    // Simulation Step Execution Control
-    if (GetSimulationState_Implementation() != 2 /* Running */)
+    if (TimeSyncThread)
     {
-        return;
+        TimeSyncThread->WaitForCompletion();
+        delete TimeSyncThread;
+        TimeSyncThread = nullptr;
     }
-
-    if (!hako_asset_is_pdu_created())
+    if (TimeSyncWorker)
     {
-        return;
-    }
-
-    if (hako_asset_is_simulation_mode())
-    {
-        hako_time_t world_time = hako_asset_get_worldtime();
-        hako_time_t next_asset_time_usec = asset_time_usec + delta_time_usec;
-        if (next_asset_time_usec <= world_time)
-        {
-            asset_time_usec = next_asset_time_usec;
-            hako_asset_notify_simtime(TCHAR_TO_ANSI(*AssetName), asset_time_usec);
-            // At this point, the simulation clock has advanced.
-            // PDU read/writes will happen in actors' Tick.
-        }
-    }
-    else if (hako_asset_is_pdu_sync_mode(TCHAR_TO_ANSI(*AssetName)))
-    {
-        hako_asset_notify_write_pdu_done(TCHAR_TO_ANSI(*AssetName));
+        delete TimeSyncWorker;
+        TimeSyncWorker = nullptr;
     }
 }
 
