@@ -180,32 +180,11 @@ bool UDroneServiceVisualizerComponent::InitializeDroneService()
 		return false;
 	}
 
-	int32 Result = -1;
-	if (bUseInitSingle)
-	{
-		FString DroneConfigText;
-		FString ControllerConfigText;
-		if (!LoadTextFileFromContent(DroneConfigTextPath, DroneConfigText))
-		{
-			UE_LOG(LogTemp, Error, TEXT("DroneServiceVisualizer: InitializeDroneService failed while loading drone config"));
-			return false;
-		}
-		if (!LoadTextFileFromContent(ControllerConfigTextPath, ControllerConfigText))
-		{
-			UE_LOG(LogTemp, Error, TEXT("DroneServiceVisualizer: InitializeDroneService failed while loading controller config"));
-			return false;
-		}
-		UE_LOG(LogTemp, Log, TEXT("DroneServiceVisualizer: calling InitSingle drone_config_len=%d controller_config_len=%d"),
-			DroneConfigText.Len(),
-			ControllerConfigText.Len());
-		Result = FHakoDroneServiceRc::InitSingle(DroneConfigText, ControllerConfigText, bEnableDataLogger, DebugLogPath);
-	}
-	else
-	{
-		const FString FullConfigDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir() / DroneConfigDirPath);
-		UE_LOG(LogTemp, Log, TEXT("DroneServiceVisualizer: calling Init config_dir=%s"), *FullConfigDir);
-		Result = FHakoDroneServiceRc::Init(bEnableDataLogger ? 1 : 0, FullConfigDir, DebugLogPath);
-	}
+	// ★ 2026-09-30（hakodrone へ移行・U3）: 物理は hakodrone が持ち、機体は SimModels/courses_drone（drone-core の
+	//   drone_config_0.json と同じ物理を写したもの）を開く。drone-core の設定の文字列（DroneConfigTextPath・
+	//   ControllerConfigTextPath・DroneConfigDirPath）はもう読まない（プロパティは互換のため残す）。
+	UE_LOG(LogTemp, Log, TEXT("DroneServiceVisualizer: calling InitSingle (hakodrone / SimModels/courses_drone)"));
+	int32 Result = FHakoDroneServiceRc::InitSingle(FString(), FString(), bEnableDataLogger, DebugLogPath);
 
 	if (Result != 0)
 	{
