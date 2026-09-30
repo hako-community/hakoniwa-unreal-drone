@@ -1,5 +1,6 @@
 #include "DroneServiceVisualizerComponent.h"
 
+#include "DroneControlLocalInput.h"
 #include "DroneLedComponent.h"
 #include "DroneGameControllerPduWriterComponent.h"
 #include "DronePropellerComponent.h"
@@ -298,7 +299,14 @@ void UDroneServiceVisualizerComponent::FindControlOp()
 		return;
 	}
 	ResolveRobotName();
-	
+
+	// ★ 2026-09-30（U3）: ローカルの入力（UDroneControlLocalInput・ゲームパッド／キーボードを直接読む）があれば先に使う。
+	//   無ければ従来どおり（箱庭の PDU を読む UDroneControlPdu など）。
+	if (UDroneControlLocalInput* Local = GetOwner()->FindComponentByClass<UDroneControlLocalInput>())
+	{
+		ControlOp = Local;
+		return;
+	}
 
 	ControlOp = GetOwner()->FindComponentByInterface(UDroneControlOp::StaticClass());
 	if (!ControlOp)
