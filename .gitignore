@@ -90,5 +90,6 @@ DerivedDataCache/*
 # hakodrone（内蔵 FC）一式は native.lock.json の版で取ってくる（scripts/windows/fetch_native.ps1）。git に入れない。
 # ThirdParty/HakoDrone/Include/hakodrone.h と ThirdParty/HakoDrone/LICENSE.md は管理する（取得しなくてもコンパイルできる）。
 /ThirdParty/HakoDrone/Win64/*
+/ThirdParty/HakoDrone/Android/*
 # 機体の物理の定義（hakodrone と同じ版で取ってくる）。git に入れない。
 /SimModels/courses_drone/

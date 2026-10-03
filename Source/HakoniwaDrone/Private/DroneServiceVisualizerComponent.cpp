@@ -9,6 +9,8 @@
 #include "HakoniwaAvatar.h"
 #include "HakoniwaClientInterface.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "geometry_msgs/pdu_cpptype_conv_Twist.hpp"
 #include "hako_mavlink_msgs/pdu_cpptype_conv_HakoHilActuatorControls.hpp"
 #include "pdu_convertor.hpp"
@@ -21,6 +23,12 @@ UDroneServiceVisualizerComponent::UDroneServiceVisualizerComponent()
 void UDroneServiceVisualizerComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	// ★ 2026-10-03（A3）: 起動の引数 -HakoLogInput で、入力と状態のログを毎秒出す（エディタで切り替えられない Android の試験用）
+	if (FParse::Param(FCommandLine::Get(), TEXT("HakoLogInput")))
+	{
+		bLogControlInput = true;
+		bLogVisualizerState = true;
+	}
 	if (const AHakoniwaAvatar* AvatarOwner = Cast<AHakoniwaAvatar>(GetOwner()))
 	{
 		if (AvatarOwner->bReadVisualStateFromPdu)
@@ -127,6 +135,7 @@ void UDroneServiceVisualizerComponent::TickComponent(float DeltaTime, ELevelTick
 				(ControlOp && IDroneControlOp::Execute_IsReady(ControlOp.GetObject())) ? 1 : 0,
 				PduManager ? TEXT("valid") : TEXT("null"),
 				static_cast<unsigned long long>(FHakoDroneServiceRc::GetTimeUsec(DroneIndex)));
+			LogServiceStateSnapshot(TEXT("periodic"));
 		}
 	}
 

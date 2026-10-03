@@ -73,6 +73,17 @@ int GButton[NumButton] = {0};
 constexpr double OldVelPerUnit = 16.5;       // 前後・左右 [m/s]／値 1
 constexpr double OldClimbPerUnit = 1.04;     // 上下 [m/s]／値 1
 constexpr double OldYawDegPerUnit = 540.0;   // ヨー [度/秒]／値 1
+// ★ 2026-10-03（A3・ユーザ決定）: ヨーの速さの上限。旧版の効きのまま倒し切ると 540 度/秒になり、
+//   courses_drone ではモータが上限に張り付いて、上昇の直後などに傾き 40 度・14 m 流されて姿勢を崩した
+//   （Quest 3 で「フリップして飛んで行く」・Windows でも同じ）。180 度/秒なら傾き 10 度・流れ 1.4 m・回り過ぎ 46 度。
+//   小さく倒したときの効き（値 1 あたり 540 度/秒）は変えず、ここで頭打ちにする。
+constexpr double MaxYawRateDeg = 180.0;
+// ★ 2026-10-03（A3）: ヨーは目標まで 0.5 秒かけて上げ下げする（シミュレーションの時間で数える）。
+//   急に入れると一瞬だけ大きな回す力が要り、モータが下限・上限に張り付く。その間 FC は傾きを立て直す余力が無く、
+//   ARM（Quest）では丸めの差から左右の対称が崩れてひっくり返った（hakodrone を Quest で直接動かして再現:
+//   急に入れると 90 度/秒でも傾き 12 度・540 度/秒で落下 ／ 0.5 秒かけると 180 度/秒でも 0.06 度）。
+constexpr double YawRampSeconds = 0.5;
+double GYawTarget = 0.0;   // PutHeading が決める目標（RC の軸の値）
 double GMaxVelXy = 2.8, GMaxClimb = 2.8, GMaxYawRateDeg = 720.0;
 
 // ★ 機体の定義（プロジェクト直下の SimModels。パッケージ版でも同じ相対位置に Non-UFS で置かれる）
@@ -81,6 +92,7 @@ const char* ModelFiles[] = {"test_world.xml", "courses_drone.mjcf.xml", "courses
 
 double Clamp1(double V) { return V > 1.0 ? 1.0 : (V < -1.0 ? -1.0 : V); }
 
+#if PLATFORM_WINDOWS
 FString ResolveDllDirectory()
 {
 #if WITH_EDITOR
@@ -110,6 +122,7 @@ FString ResolveDllDirectory()
 	// パッケージ版では Build.cs が実行ファイルの隣へ DLL を置く
 	return FPlatformProcess::BaseDir();
 }
+#endif
 
 template <typename T>
 bool Resolve(T& Out, const TCHAR* Name, FString* OutError)
@@ -124,12 +137,16 @@ bool Resolve(T& Out, const TCHAR* Name, FString* OutError)
 
 void ClearInputs()
 {
+	GYawTarget = 0.0;
 	for (double& A : GAxis) A = 0.0;
 	for (int& B : GButton) B = 0;
 }
 
-bool SendInputs()
+// Dt 秒ぶん、ヨーの軸を目標へ近づけてから送る
+bool SendInputs(double Dt)
 {
+	const double MaxDelta = (MaxYawRateDeg / GMaxYawRateDeg) * Dt / YawRampSeconds;
+	GAxis[AxisTurnLR] += FMath::Clamp(GYawTarget - GAxis[AxisTurnLR], -MaxDelta, MaxDelta);
 	return GSim != nullptr && pRcUpdate(GSim, 0, GAxis, NumAxis, GButton, NumButton, 1) == HD_OK;
 }
 
@@ -172,6 +189,28 @@ bool FHakoDroneServiceRc::LoadDll(FString* OutError)
 		UnloadDll();
 		return false;
 	}
+#elif PLATFORM_ANDROID
+	// ★ 2026-10-03（A2）: APK の lib/arm64-v8a に入れた .so を標準の名前で読む（dlopen はそこを探す）。
+	//   libhakodrone.so は libmujoco.so に依存するので先に読む（courses の HakoLibLoader と同じ順番）。
+	const FString HakoDronePath = TEXT("libhakodrone.so");
+	GMujocoHandle = FPlatformProcess::GetDllHandle(TEXT("libmujoco.so"));
+	GHakoDroneHandle = FPlatformProcess::GetDllHandle(*HakoDronePath);
+	if (GMujocoHandle == nullptr || GHakoDroneHandle == nullptr)
+	{
+		if (OutError)
+		{
+			*OutError = TEXT("libhakodrone.so または libmujoco.so を読めません（APK に入っているか: HakoniwaDroneService_APL.xml）");
+		}
+		UnloadDll();
+		return false;
+	}
+#else
+	if (OutError)
+	{
+		*OutError = TEXT("hakodrone はいま Win64 と Android だけに置いています。");
+	}
+	return false;
+#endif
 
 	FAbiVersion AbiFn = reinterpret_cast<FAbiVersion>(FPlatformProcess::GetDllExport(GHakoDroneHandle, TEXT("hd_abi_version")));
 	FVersion VersionFn = reinterpret_cast<FVersion>(FPlatformProcess::GetDllExport(GHakoDroneHandle, TEXT("hd_version")));
@@ -210,13 +249,6 @@ bool FHakoDroneServiceRc::LoadDll(FString* OutError)
 	UE_LOG(LogHakoDroneService, Log, TEXT("hakodrone %s（ABI %d）を読みました: %s"),
 		VersionFn ? UTF8_TO_TCHAR(VersionFn()) : TEXT("?"), Abi, *HakoDronePath);
 	return true;
-#else
-	if (OutError)
-	{
-		*OutError = TEXT("hakodrone はいま Win64 だけに置いています（Android は計画の A0〜A3）。");
-	}
-	return false;
-#endif
 }
 
 void FHakoDroneServiceRc::UnloadDll()
@@ -320,15 +352,16 @@ int32 FHakoDroneServiceRc::Start()
 int32 FHakoDroneServiceRc::Run()
 {
 	if (GSim == nullptr) return -1;
-	SendInputs();
+	SendInputs(0.001);
 	return pStep(GSim, 0.001);
 }
 
 int32 FHakoDroneServiceRc::AdvanceTimeUsec(uint64 TimeUsec)
 {
 	if (GSim == nullptr) return -1;
-	SendInputs();
-	return pStep(GSim, static_cast<double>(TimeUsec) * 1e-6);
+	const double Dt = static_cast<double>(TimeUsec) * 1e-6;
+	SendInputs(Dt);
+	return pStep(GSim, Dt);
 }
 
 int32 FHakoDroneServiceRc::Stop()
@@ -362,7 +395,8 @@ int32 FHakoDroneServiceRc::PutHorizontal(int32 Index, double Value)
 
 int32 FHakoDroneServiceRc::PutHeading(int32 Index, double Value)
 {
-	GAxis[AxisTurnLR] = Clamp1(Value * OldYawDegPerUnit / GMaxYawRateDeg);
+	const double RateDeg = FMath::Clamp(Value * OldYawDegPerUnit, -MaxYawRateDeg, MaxYawRateDeg);
+	GYawTarget = Clamp1(RateDeg / GMaxYawRateDeg);   // 実際の軸は SendInputs で 0.5 秒かけて近づける
 	return 0;
 }
 
