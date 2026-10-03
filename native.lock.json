@@ -10,5 +10,13 @@
     "place": {
       "models/courses_drone/": "SimModels/courses_drone"
     }
+  },
+  "hakodrone_android": {
+    "repo": "hako-community/releases-channel",
+    "tag": "hakodrone-v1.2.2",
+    "version": "1.2.2",
+    "asset": "hakodrone-android-arm64.zip",
+    "sha256": "bc403ae02ea594d801ab7c68f4f029e31e092ac03b5640073fded8c739c1104f",
+    "dest": "ThirdParty/HakoDrone/Android/arm64-v8a"
   }
 }

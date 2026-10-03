@@ -68,9 +68,45 @@ public class HakoniwaDroneService : ModuleRules
 			}
 			PublicDefinitions.Add("HAKO_DRONE_SERVICE_ENABLE=1");
 		}
+		else if (Target.Platform == UnrealTargetPlatform.Android)
+		{
+			// ★ 2026-10-03（A2）: libhakodrone.so ＋ libmujoco.so は UPL（HakoniwaDroneService_APL.xml）で APK の
+			//   lib/arm64-v8a へ入れ、実行時に標準の名前で読む。取得物は ThirdParty/HakoDrone/Android/arm64-v8a。
+			string SoDirectory = Path.Combine(HakoDroneRoot, "Android", "arm64-v8a");
+			foreach (string SoName in new string[] { "libmujoco.so", "libhakodrone.so" })
+			{
+				if (!File.Exists(Path.Combine(SoDirectory, SoName)))
+				{
+					System.Console.WriteLine("Warning: hakodrone の " + SoName + " がありません（fetch_native.ps1 で取ってくる）: " + SoDirectory);
+				}
+			}
+			AdditionalPropertiesForReceipt.Add("AndroidPlugin", Path.Combine(ModuleDirectory, "HakoniwaDroneService_APL.xml"));
+
+			// 条文は pak に入れる（PolyForm の Notice 条件）
+			RuntimeDependencies.Add(Path.Combine(HakoDroneRoot, "LICENSE.md"), StagedFileType.UFS);
+			foreach (string NoticeName in new string[] { "LICENSE-mujoco.txt", "THIRD_PARTY_NOTICES-mujoco.txt", "LICENSE-nlohmann-json.txt", "manifest.json" })
+			{
+				string NoticePath = Path.Combine(SoDirectory, NoticeName);
+				if (File.Exists(NoticePath))
+				{
+					RuntimeDependencies.Add(NoticePath, StagedFileType.UFS);
+				}
+			}
+
+			// ★ 機体の定義は pak の中（UFS）に入れる。FFileHelper::LoadFileToString は pak の中も読める
+			//   （HakoDroneServiceRc.cpp の OpenModel はプロジェクト相対の SimModels/courses_drone を読む）
+			string SimModelsDirectory = Path.Combine(ProjectRoot, "SimModels");
+			if (Directory.Exists(SimModelsDirectory))
+			{
+				foreach (string ModelPath in Directory.GetFiles(SimModelsDirectory, "*", SearchOption.AllDirectories))
+				{
+					RuntimeDependencies.Add(ModelPath, StagedFileType.UFS);
+				}
+			}
+			PublicDefinitions.Add("HAKO_DRONE_SERVICE_ENABLE=1");
+		}
 		else
 		{
-			// ★ Android などは計画の A0〜A3（libhakodrone.so を実行時に読む）。いまは読み込みが失敗して知らせる。
 			PublicDefinitions.Add("HAKO_DRONE_SERVICE_ENABLE=0");
 		}
 	}

@@ -3,7 +3,7 @@
 #include "DroneControlPdu.h"
 #include "HakoniwaClientInterface.h"
 #include "Kismet/GameplayStatics.h"
-#include "hako_capi.h"
+#include "HakoCapiCompat.h"   // ★ Win64 だけ hako_capi.h（共有メモリ）・Android は代用品（A1）
 #include "pdu_convertor.hpp"
 
 UDroneGameControllerPduWriterComponent::UDroneGameControllerPduWriterComponent()

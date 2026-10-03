@@ -90,7 +90,15 @@ public class HakoniwaPdu : ModuleRules
         if (Target.bBuildEditor)
         {
             PrivateDependencyModuleNames.Add("UnrealEd");
+        }
+        // ★ 2026-10-03（A1）: Android では hakoniwa-pdu-registry のヘッダが Unreal の型と衝突する・C の版の判定で
+        //   未定義の識別子の警告（エラー扱い）になる。サブモジュールは変えずに、ここで避ける（HakoPduTypesCompat.h）。
+        if (Target.Platform == UnrealTargetPlatform.Android)
+        {
+            ForceIncludeFiles.Add(Path.Combine(Path.Combine(ModuleDirectory, "Public"), "HakoPduTypesCompat.h"));
+            CppCompileWarningSettings.UndefinedIdentifierWarningLevel = WarningLevel.Off;
         }
+
 
         if (Target.Platform == UnrealTargetPlatform.Win64)
         {

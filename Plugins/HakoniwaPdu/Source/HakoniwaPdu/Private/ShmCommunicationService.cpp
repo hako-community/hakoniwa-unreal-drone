@@ -3,7 +3,7 @@
 #include "HAL/PlatformProcess.h"
 #include "HAL/PlatformTime.h"
 #include "HAL/PlatformTLS.h"
-#include "hako_capi.h"
+#include "HakoCapiCompat.h"   // ★ Win64 だけ hako_capi.h（共有メモリ）・Android は代用品（A1）
 
 #ifndef HAKO_PROP_DETAILED_LOG
 #define HAKO_PROP_DETAILED_LOG 0
