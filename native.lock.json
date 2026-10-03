@@ -2,10 +2,10 @@
   "_about": "ビルドの前に scripts/windows/fetch_native.ps1（setup_build.ps1 から）がこの版を取ってきて置く。版を上げるときは tag・version・sha256 を releases-channel の Release の値に書き換える。place の「フォルダ/」は zip の中の機体の定義（models/<機体>/）の置き場。",
   "hakodrone": {
     "repo": "hako-community/releases-channel",
-    "tag": "hakodrone-v1.2.2",
-    "version": "1.2.2",
+    "tag": "hakodrone-v1.2.3",
+    "version": "1.2.3",
     "asset": "hakodrone-windows-x86_64.zip",
-    "sha256": "0aa3ac3aa5a1fdd5233d824d7c0d005b2d6e9fd565b51b56cca8905fc3ac6591",
+    "sha256": "e3e7b17171cad63899e9c262ca3b2f1cd13d8c49496667ecf3fbb8908cd0e783",
     "dest": "ThirdParty/HakoDrone/Win64",
     "place": {
       "models/courses_drone/": "SimModels/courses_drone"
@@ -13,10 +13,10 @@
   },
   "hakodrone_android": {
     "repo": "hako-community/releases-channel",
-    "tag": "hakodrone-v1.2.2",
-    "version": "1.2.2",
+    "tag": "hakodrone-v1.2.3",
+    "version": "1.2.3",
     "asset": "hakodrone-android-arm64.zip",
-    "sha256": "bc403ae02ea594d801ab7c68f4f029e31e092ac03b5640073fded8c739c1104f",
+    "sha256": "1ea75c628ffd265d77d3b03a90fb2fcd60f65bfb2c09d083cd8adce1948b8a86",
     "dest": "ThirdParty/HakoDrone/Android/arm64-v8a"
   }
 }
