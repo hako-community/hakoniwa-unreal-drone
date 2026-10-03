@@ -68,7 +68,9 @@ int GButton[NumButton] = {0};
 
 // ★ 手ごたえ: Put* の値 1 あたり、旧版（hako_service_c）がどれだけ動いたかの実測（courses の計画 §10.2）。
 //   倒し切りの上限は機体の定義（courses_drone の meta の fc_tuning.manual）の値を開いたあとに読む。
-constexpr double OldVelPerUnit = 10.8;       // 前後・左右 [m/s]／値 1
+// ★ 前後・左右だけ courses（10.8）と違う: Unreal の旧設定（Content/Config/controller/param-api-mixer.txt）は
+//   PID_POS_VX/VY_Kp が 20（courses は 5）で、値 0.05・0.1 で 0.83・1.65 m/s（16.5 m/s／値 1・線形）だった（U4 の実測）。
+constexpr double OldVelPerUnit = 16.5;       // 前後・左右 [m/s]／値 1
 constexpr double OldClimbPerUnit = 1.04;     // 上下 [m/s]／値 1
 constexpr double OldYawDegPerUnit = 540.0;   // ヨー [度/秒]／値 1
 double GMaxVelXy = 2.8, GMaxClimb = 2.8, GMaxYawRateDeg = 720.0;
