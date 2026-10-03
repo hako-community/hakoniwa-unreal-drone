@@ -59,4 +59,9 @@ private:
 	float KeyPair(const FKey& Plus, const FKey& Minus) const;
 	bool JustPressed(const FKey& Pad, const FKey& Key) const;
 	bool JustReleased(const FKey& Pad, const FKey& Key) const;
+
+	// 前面に戻った直後の古い軸の値を捨てるための状態（Axis は const なので mutable）
+	mutable bool bHadFocus = true;
+	mutable TMap<FName, float> StaleAxisValues;
+	mutable TSet<FName> AxesReadSinceFocus;
 };

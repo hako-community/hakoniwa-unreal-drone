@@ -45,7 +45,24 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows\setup_build.ps1
 - `AvatarWeb.umap`  — ドローンを Web 経由で制御する際に使用するレベルです。
 - `AvatarWeb-2.umap`  — Web 経由の 2 機体構成向けレベルです。
 - `AvatarShm.umap`  — 共有メモリ経由で箱庭コアと連携するレベルです。
-- `AvatarLocal.umap`  — 箱庭に繋がず、`hakodrone` で Unreal の中だけで飛ばすレベルです（ゲームパッド、またはキーボード: Space アーム・W/S 上下・A/D ヨー・矢印キー 前後左右）。
+- `AvatarLocal.umap`  — 箱庭に繋がず、`hakodrone` で Unreal の中だけで飛ばすレベルです（操作は下の「オフラインの操作」）。
+
+## オフラインの操作（AvatarLocal）
+
+PIE を始めたらビューポートを一度クリックします。START ボタンは箱庭（共有メモリ）用なので、オフラインでは押しません。
+
+| 操作 | ゲームパッド | キーボード |
+|---|---|---|
+| アーム／ディスアーム（押すたびに切り替わる） | A（PS 系は ×） | Space |
+| 上昇・下降 | 左スティック 上下 | W / S |
+| ヨー | 左スティック 左右 | A / D |
+| 前進・後退 | 右スティック 上下 | ↑ / ↓ |
+| 左右 | 右スティック 左右 | ← / → |
+
+* Xbox 型（XInput）のゲームパッドはそのまま使えます。
+* それ以外の HID ゲームパッドは **GameInput** で読みます。Windows に Microsoft GameInput の再頒布が必要です（管理者の PowerShell で `winget install --id Microsoft.GameInput -e`）。
+  割り当ては `Config/DefaultInput.ini` の `[/Script/GameInputBase.GameInputDeveloperSettings]` に機種（VID/PID）ごとに書きます。いまは HORIPAD mini4（PS4 互換）を登録しています。
+* エディタが前面にいないあいだは入力を中立にします（GameInput は背景では全軸 0 を送るため）。
 
 ## 主要な Blueprint / コンポーネント
 

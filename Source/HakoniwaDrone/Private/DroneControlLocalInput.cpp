@@ -3,6 +3,7 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
+#include "Misc/App.h"
 
 UDroneControlLocalInput::UDroneControlLocalInput()
 {
@@ -24,7 +25,37 @@ float UDroneControlLocalInput::Axis(const FKey& Key) const
 {
 	const APlayerController* PC = GetPlayerController();
 	if (PC == nullptr) return 0.0f;
+	// ★ アプリが前面にいないあいだは中立にする。GameInput は前面でないとき軸を全部 0 で送り、
+	//   スティックの割り当て（0〜1 を −1〜+1 に直す）では 0 が「倒し切り」になって、機体が回りながら飛んで行く（U4 で確認）。
+	if (!FApp::HasFocus())
+	{
+		bHadFocus = false;
+		return 0.0f;
+	}
+	if (!bHadFocus)
+	{
+		// ★ 前面に戻った瞬間: Unreal には前面でないあいだに届いた値（全部 0 → 倒し切り）が残っていて、
+		//   スティックを動かすまで消えない。各軸は、前面に戻ってから最初に読んだ値を「古い値」として覚え、
+		//   値が動く（新しい読み取りが届く）まで中立にする。
+		bHadFocus = true;
+		StaleAxisValues.Reset();
+		AxesReadSinceFocus.Reset();
+	}
+	const FName Name = Key.GetFName();
 	const float V = PC->GetInputAnalogKeyState(Key);
+	if (!AxesReadSinceFocus.Contains(Name))
+	{
+		AxesReadSinceFocus.Add(Name);
+		if (FMath::Abs(V) >= StickDeadzone)
+		{
+			StaleAxisValues.Add(Name, V);
+		}
+	}
+	if (const float* Stale = StaleAxisValues.Find(Name))
+	{
+		if (FMath::Abs(V - *Stale) < 0.01f) return 0.0f;
+		StaleAxisValues.Remove(Name);
+	}
 	return FMath::Abs(V) < StickDeadzone ? 0.0f : FMath::Clamp(V, -1.0f, 1.0f);
 }
 
@@ -58,9 +89,11 @@ FVector2D UDroneControlLocalInput::GetLeftStickInput_Implementation()
 }
 
 // ★ PDU と同じ約束: 右 X = 前後（前が +）・右 Y = 左右（右が +）
+// ★ Unreal はゲームに渡す Gamepad_RightY だけ符号を反転する（SceneViewport.cpp・マウスの Y と同じ扱い。XInput でも同じ）。
+//   右スティックの上を + にするため、ここで戻す（左の Gamepad_LeftY は反転されない）。
 FVector2D UDroneControlLocalInput::GetRightStickInput_Implementation()
 {
-	const float MoveFB = FMath::Clamp(Axis(EKeys::Gamepad_RightY) + KeyPair(EKeys::Up, EKeys::Down), -1.0f, 1.0f);
+	const float MoveFB = FMath::Clamp(-Axis(EKeys::Gamepad_RightY) + KeyPair(EKeys::Up, EKeys::Down), -1.0f, 1.0f);
 	const float MoveLR = FMath::Clamp(Axis(EKeys::Gamepad_RightX) + KeyPair(EKeys::Right, EKeys::Left), -1.0f, 1.0f);
 	return FVector2D(MoveFB, MoveLR);
 }

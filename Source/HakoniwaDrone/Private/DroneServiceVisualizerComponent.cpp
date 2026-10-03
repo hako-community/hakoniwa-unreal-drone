@@ -790,9 +790,11 @@ void UDroneServiceVisualizerComponent::WriteMotorPdu(double C1, double C2, doubl
 	PduManager->FlushPduRawData(RobotName, MotorPduName, Buffer);
 }
 
+// ★ 2026-10-03（U4）: オンライン（AHakoniwaAvatar・PDU の pos）と同じ写し方に揃えた（ROS の FLU → Unreal: x そのまま・y 反転）。
+//   それまでの (−Y, X, Z) は 90 度回っていて、どのレベルにも置かれていなかったので確かめられていなかった。
 FVector UDroneServiceVisualizerComponent::ServicePositionToUnreal(double X, double Y, double Z) const
 {
-	return FVector(static_cast<float>(-Y * UnrealScale), static_cast<float>(X * UnrealScale), static_cast<float>(Z * UnrealScale));
+	return FVector(static_cast<float>(X * UnrealScale), static_cast<float>(-Y * UnrealScale), static_cast<float>(Z * UnrealScale));
 }
 
 FRotator UDroneServiceVisualizerComponent::ServiceAttitudeToUnreal(double RollRad, double PitchRad, double YawRad) const
@@ -800,5 +802,5 @@ FRotator UDroneServiceVisualizerComponent::ServiceAttitudeToUnreal(double RollRa
 	const float RollDeg = FMath::RadiansToDegrees(static_cast<float>(RollRad));
 	const float PitchDeg = FMath::RadiansToDegrees(static_cast<float>(PitchRad));
 	const float YawDeg = FMath::RadiansToDegrees(static_cast<float>(YawRad));
-	return FRotator(PitchDeg, -YawDeg, -RollDeg);
+	return FRotator(-PitchDeg, -YawDeg, RollDeg);   // AHakoniwaAvatar と同じ（ピッチ・ヨーは反転・ロールはそのまま）
 }
