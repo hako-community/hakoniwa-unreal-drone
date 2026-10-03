@@ -64,4 +64,7 @@ private:
 	mutable bool bHadFocus = true;
 	mutable TMap<FName, float> StaleAxisValues;
 	mutable TSet<FName> AxesReadSinceFocus;
+
+	void EnsureGameInputBackgroundPolicy() const;
+	mutable bool bGameInputPolicySet = false;
 };

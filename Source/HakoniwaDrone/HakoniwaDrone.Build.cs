@@ -51,6 +51,9 @@ public class HakoniwaDrone : ModuleRules
 
         if (Target.Platform == UnrealTargetPlatform.Win64)
         {
+            // ★ 2026-10-03: GameInput の背景入力を有効にするため（UDroneControlLocalInput）
+            PrivateDependencyModuleNames.Add("GameInputBase");
+
             string DefaultCoreRoot = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                 "hakoCore-win");

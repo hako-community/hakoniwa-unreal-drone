@@ -5,6 +5,10 @@
 #include "InputCoreTypes.h"
 #include "Misc/App.h"
 
+#if PLATFORM_WINDOWS
+#include "GameInputBaseModule.h"
+#endif
+
 UDroneControlLocalInput::UDroneControlLocalInput()
 {
 	PrimaryComponentTick.bCanEverTick = false;
@@ -21,10 +25,27 @@ bool UDroneControlLocalInput::IsReady_Implementation()
 	return GetPlayerController() != nullptr;
 }
 
+// ★ GameInput は既定では「前面でないあいだ」全軸 0 の読み取りを送る（0〜1 を −1〜+1 に直す割り当てでは倒し切り）。
+//   その 0 が前面に戻ったあとに遅れて届くと機体が勝手に動く（U4 でユーザが確認）。背景でも実際の値を送らせて、0 を出させない。
+//   背景にいるあいだの入力は Axis で中立にする。GameInput は起動時に非同期で作られるので、できるまで毎回試す。
+void UDroneControlLocalInput::EnsureGameInputBackgroundPolicy() const
+{
+#if PLATFORM_WINDOWS && GAME_INPUT_SUPPORT
+	if (bGameInputPolicySet || !FGameInputBaseModule::IsAvailable()) return;
+	if (IGameInput* GameInput = FGameInputBaseModule::GetGameInput())
+	{
+		GameInput->SetFocusPolicy(GameInputEnableBackgroundInput);
+		bGameInputPolicySet = true;
+		UE_LOG(LogTemp, Log, TEXT("DroneControlLocalInput: GameInput の背景入力を有効にしました（前面でないときの全軸 0 を防ぐ）"));
+	}
+#endif
+}
+
 float UDroneControlLocalInput::Axis(const FKey& Key) const
 {
 	const APlayerController* PC = GetPlayerController();
 	if (PC == nullptr) return 0.0f;
+	EnsureGameInputBackgroundPolicy();
 	// ★ アプリが前面にいないあいだは中立にする。GameInput は前面でないとき軸を全部 0 で送り、
 	//   スティックの割り当て（0〜1 を −1〜+1 に直す）では 0 が「倒し切り」になって、機体が回りながら飛んで行く（U4 で確認）。
 	if (!FApp::HasFocus())
