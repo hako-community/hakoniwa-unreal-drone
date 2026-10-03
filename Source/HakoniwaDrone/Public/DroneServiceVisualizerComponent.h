@@ -42,18 +42,6 @@ public:
 	float AutoInitializeRetryInterval = 1.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hakoniwa|Drone Service")
-	bool bUseInitSingle = true;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hakoniwa|Drone Service")
-	FString DroneConfigTextPath = TEXT("Config/drone/rc/drone_config_0.json");
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hakoniwa|Drone Service")
-	FString ControllerConfigTextPath = TEXT("Config/controller/param-api-mixer.txt");
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hakoniwa|Drone Service")
-	FString DroneConfigDirPath = TEXT("Config/drone/rc-1");
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hakoniwa|Drone Service")
 	bool bEnableDataLogger = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hakoniwa|Drone Service")
@@ -178,7 +166,6 @@ private:
 	int32 LastRadioControlButtonValue = -1;
 	float ServiceStateDebugLogRemaining = 0.0f;
 
-	bool LoadTextFileFromContent(const FString& RelativePath, FString& OutText) const;
 	void FindPduManager();
 	void ResolveRobotName();
 	void FindControlOp();

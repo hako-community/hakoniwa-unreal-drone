@@ -1,5 +1,6 @@
 #include "DroneServiceVisualizerComponent.h"
 
+#include "DroneControlLocalInput.h"
 #include "DroneLedComponent.h"
 #include "DroneGameControllerPduWriterComponent.h"
 #include "DronePropellerComponent.h"
@@ -8,8 +9,6 @@
 #include "HakoniwaAvatar.h"
 #include "HakoniwaClientInterface.h"
 #include "Kismet/GameplayStatics.h"
-#include "Misc/FileHelper.h"
-#include "Misc/Paths.h"
 #include "geometry_msgs/pdu_cpptype_conv_Twist.hpp"
 #include "hako_mavlink_msgs/pdu_cpptype_conv_HakoHilActuatorControls.hpp"
 #include "pdu_convertor.hpp"
@@ -166,12 +165,8 @@ bool UDroneServiceVisualizerComponent::InitializeDroneService()
 		return true;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("DroneServiceVisualizer: InitializeDroneService start owner=%s use_init_single=%d drone_config=%s controller_config=%s config_dir=%s"),
-		GetOwner() ? *GetOwner()->GetName() : TEXT("None"),
-		bUseInitSingle ? 1 : 0,
-		*DroneConfigTextPath,
-		*ControllerConfigTextPath,
-		*DroneConfigDirPath);
+	UE_LOG(LogTemp, Log, TEXT("DroneServiceVisualizer: InitializeDroneService start owner=%s"),
+		GetOwner() ? *GetOwner()->GetName() : TEXT("None"));
 
 	FString Error;
 	if (!FHakoDroneServiceRc::LoadDll(&Error))
@@ -180,32 +175,11 @@ bool UDroneServiceVisualizerComponent::InitializeDroneService()
 		return false;
 	}
 
-	int32 Result = -1;
-	if (bUseInitSingle)
-	{
-		FString DroneConfigText;
-		FString ControllerConfigText;
-		if (!LoadTextFileFromContent(DroneConfigTextPath, DroneConfigText))
-		{
-			UE_LOG(LogTemp, Error, TEXT("DroneServiceVisualizer: InitializeDroneService failed while loading drone config"));
-			return false;
-		}
-		if (!LoadTextFileFromContent(ControllerConfigTextPath, ControllerConfigText))
-		{
-			UE_LOG(LogTemp, Error, TEXT("DroneServiceVisualizer: InitializeDroneService failed while loading controller config"));
-			return false;
-		}
-		UE_LOG(LogTemp, Log, TEXT("DroneServiceVisualizer: calling InitSingle drone_config_len=%d controller_config_len=%d"),
-			DroneConfigText.Len(),
-			ControllerConfigText.Len());
-		Result = FHakoDroneServiceRc::InitSingle(DroneConfigText, ControllerConfigText, bEnableDataLogger, DebugLogPath);
-	}
-	else
-	{
-		const FString FullConfigDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir() / DroneConfigDirPath);
-		UE_LOG(LogTemp, Log, TEXT("DroneServiceVisualizer: calling Init config_dir=%s"), *FullConfigDir);
-		Result = FHakoDroneServiceRc::Init(bEnableDataLogger ? 1 : 0, FullConfigDir, DebugLogPath);
-	}
+	// ★ 2026-09-30（hakodrone へ移行・U3）: 物理は hakodrone が持ち、機体は SimModels/courses_drone（drone-core の
+	//   drone_config_0.json と同じ物理を写したもの）を開く。drone-core の設定（Content/Config/drone・controller）と
+	//   そのパスのプロパティは U5 で外した。
+	UE_LOG(LogTemp, Log, TEXT("DroneServiceVisualizer: calling InitSingle (hakodrone / SimModels/courses_drone)"));
+	int32 Result = FHakoDroneServiceRc::InitSingle(FString(), FString(), bEnableDataLogger, DebugLogPath);
 
 	if (Result != 0)
 	{
@@ -244,22 +218,6 @@ void UDroneServiceVisualizerComponent::StopDroneService()
 		UE_LOG(LogTemp, Warning, TEXT("DroneServiceVisualizer: drone service stop returned %d"), Result);
 	}
 	bServiceStarted = false;
-}
-
-bool UDroneServiceVisualizerComponent::LoadTextFileFromContent(const FString& RelativePath, FString& OutText) const
-{
-	const FString FullPath = FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir() / RelativePath);
-	if (!FPaths::FileExists(FullPath))
-	{
-		UE_LOG(LogTemp, Error, TEXT("DroneServiceVisualizer: config file not found: %s"), *FullPath);
-		return false;
-	}
-	if (!FFileHelper::LoadFileToString(OutText, *FullPath))
-	{
-		UE_LOG(LogTemp, Error, TEXT("DroneServiceVisualizer: failed to read config file: %s"), *FullPath);
-		return false;
-	}
-	return true;
 }
 
 void UDroneServiceVisualizerComponent::FindPduManager()
@@ -319,7 +277,14 @@ void UDroneServiceVisualizerComponent::FindControlOp()
 		return;
 	}
 	ResolveRobotName();
-	
+
+	// ★ 2026-09-30（U3）: ローカルの入力（UDroneControlLocalInput・ゲームパッド／キーボードを直接読む）があれば先に使う。
+	//   無ければ従来どおり（箱庭の PDU を読む UDroneControlPdu など）。
+	if (UDroneControlLocalInput* Local = GetOwner()->FindComponentByClass<UDroneControlLocalInput>())
+	{
+		ControlOp = Local;
+		return;
+	}
 
 	ControlOp = GetOwner()->FindComponentByInterface(UDroneControlOp::StaticClass());
 	if (!ControlOp)
@@ -825,9 +790,11 @@ void UDroneServiceVisualizerComponent::WriteMotorPdu(double C1, double C2, doubl
 	PduManager->FlushPduRawData(RobotName, MotorPduName, Buffer);
 }
 
+// ★ 2026-10-03（U4）: オンライン（AHakoniwaAvatar・PDU の pos）と同じ写し方に揃えた（ROS の FLU → Unreal: x そのまま・y 反転）。
+//   それまでの (−Y, X, Z) は 90 度回っていて、どのレベルにも置かれていなかったので確かめられていなかった。
 FVector UDroneServiceVisualizerComponent::ServicePositionToUnreal(double X, double Y, double Z) const
 {
-	return FVector(static_cast<float>(-Y * UnrealScale), static_cast<float>(X * UnrealScale), static_cast<float>(Z * UnrealScale));
+	return FVector(static_cast<float>(X * UnrealScale), static_cast<float>(-Y * UnrealScale), static_cast<float>(Z * UnrealScale));
 }
 
 FRotator UDroneServiceVisualizerComponent::ServiceAttitudeToUnreal(double RollRad, double PitchRad, double YawRad) const
@@ -835,5 +802,5 @@ FRotator UDroneServiceVisualizerComponent::ServiceAttitudeToUnreal(double RollRa
 	const float RollDeg = FMath::RadiansToDegrees(static_cast<float>(RollRad));
 	const float PitchDeg = FMath::RadiansToDegrees(static_cast<float>(PitchRad));
 	const float YawDeg = FMath::RadiansToDegrees(static_cast<float>(YawRad));
-	return FRotator(PitchDeg, -YawDeg, -RollDeg);
+	return FRotator(-PitchDeg, -YawDeg, RollDeg);   // AHakoniwaAvatar と同じ（ピッチ・ヨーは反転・ロールはそのまま）
 }

@@ -7,9 +7,6 @@ param(
     [string]$CoreSdkRoot,
 
     [Parameter()]
-    [string]$DroneSdkRoot,
-
-    [Parameter()]
     [switch]$ValidateOnly
 )
 
@@ -72,7 +69,7 @@ function Resolve-DependencyFile {
 function Set-SdkEnvironmentFromRoot {
     param(
         [string]$Root,
-        [ValidateSet('Core', 'Drone')]
+        [ValidateSet('Core')]
         [string]$Sdk
     )
 
@@ -86,12 +83,6 @@ function Set-SdkEnvironmentFromRoot {
         $env:HAKO_CORE_LIB_PATH = Join-Path $resolvedRoot 'lib'
         $env:HAKO_CORE_DLL_PATH = Join-Path $resolvedRoot 'bin'
         Write-Step "Core SDK environment set for this process: $resolvedRoot"
-    }
-    else {
-        $env:HAKO_DRONE_INC_PATH = Join-Path $resolvedRoot 'include'
-        $env:HAKO_DRONE_LIB_PATH = Join-Path $resolvedRoot 'lib'
-        $env:HAKO_DRONE_DLL_PATH = Join-Path $resolvedRoot 'bin'
-        Write-Step "Drone SDK environment set for this process: $resolvedRoot"
     }
 }
 
@@ -119,10 +110,8 @@ Assert-File -Path $pluginDescriptor -Description 'HakoniwaPdu plugin descriptor'
 Assert-File -Path $pduRegistryHeader -Description 'hakoniwa-pdu-registry submodule'
 
 Set-SdkEnvironmentFromRoot -Root $CoreSdkRoot -Sdk Core
-Set-SdkEnvironmentFromRoot -Root $DroneSdkRoot -Sdk Drone
 
 $defaultCoreRoot = Join-Path $env:APPDATA 'hakoCore-win'
-$defaultDroneRoot = Join-Path $env:LOCALAPPDATA 'hakoApps-win\hakoSim'
 
 $null = Resolve-DependencyFile `
     -EnvironmentVariable 'HAKO_CORE_INC_PATH' `
@@ -145,28 +134,24 @@ $null = Resolve-DependencyFile `
     -FallbackPath (Join-Path $projectRoot 'Binaries\Win64\shakoc.dll') `
     -Description 'shakoc runtime DLL'
 
-$null = Resolve-DependencyFile `
-    -EnvironmentVariable 'HAKO_DRONE_INC_PATH' `
-    -EnvironmentRelativePath 'service\drone\drone_service_rc_api.h' `
-    -DefaultPath (Join-Path $defaultDroneRoot 'include\service\drone\drone_service_rc_api.h') `
-    -FallbackPath (Join-Path $projectRoot 'Plugins\HakoniwaDroneService\Source\ThirdParty\hako_service_c\include\drone_service_rc_api.h') `
-    -Description 'hako_service_c header'
-
-$null = Resolve-DependencyFile `
-    -EnvironmentVariable 'HAKO_DRONE_LIB_PATH' `
-    -EnvironmentRelativePath 'hako_service_c.lib' `
-    -DefaultPath (Join-Path $defaultDroneRoot 'lib\hako_service_c.lib') `
-    -FallbackPath (Join-Path $projectRoot 'Plugins\HakoniwaDroneService\Source\ThirdParty\hako_service_c\lib\Win64\hako_service_c.lib') `
-    -Description 'hako_service_c import library'
-
-$null = Resolve-DependencyFile `
-    -EnvironmentVariable 'HAKO_DRONE_DLL_PATH' `
-    -EnvironmentRelativePath 'hako_service_c.dll' `
-    -DefaultPath (Join-Path $defaultDroneRoot 'bin\hako_service_c.dll') `
-    -FallbackPath (Join-Path $projectRoot 'Binaries\Win64\hako_service_c.dll') `
-    -Description 'hako_service_c runtime DLL'
-
 Write-Step 'Environment-based build dependencies are valid.'
+
+# hakodrone.dll + mujoco.dll と機体の定義（SimModels/courses_drone）を native.lock.json の版で取ってくる。
+# 取得済みなら素早く抜ける。HAKO_SKIP_FETCH_NATIVE=1 で飛ばせる（DLL が無くてもモジュールはコンパイルできる）。
+Write-Step 'Fetching native libraries (native.lock.json)...'
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'fetch_native.ps1') -Root $projectRoot
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[setup-build] ERROR: fetch_native.ps1 failed (see above)." -ForegroundColor Red
+    exit 1
+}
+# コンパイルに使うヘッダは ThirdParty/HakoDrone/Include で管理している。取ってきたものと違えば知らせる。
+$trackedHeader = Join-Path $projectRoot 'ThirdParty\HakoDrone\Include\hakodrone.h'
+$fetchedHeader = Join-Path $projectRoot 'ThirdParty\HakoDrone\Win64\hakodrone.h'
+if ((Test-Path $trackedHeader) -and (Test-Path $fetchedHeader)) {
+    if ([Convert]::ToBase64String([System.IO.File]::ReadAllBytes($trackedHeader)) -ne [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($fetchedHeader))) {
+        Write-Host "[setup-build] WARNING: ThirdParty/HakoDrone/Include/hakodrone.h differs from the fetched header. Copy the fetched one if the ABI changed." -ForegroundColor Yellow
+    }
+}
 
 if ($ValidateOnly) {
     Write-Step 'ValidateOnly specified; skipping the Unreal build.'
