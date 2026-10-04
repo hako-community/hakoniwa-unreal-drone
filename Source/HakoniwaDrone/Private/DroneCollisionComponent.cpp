@@ -83,9 +83,17 @@ void UDroneCollisionComponent::OnOverlapBegin(UPrimitiveComponent* OverlappedCom
     CollisionInfo.SelfContactVector = ConvertToRosVector(SelfContactVector);
     CollisionInfo.TargetContactVector = ConvertToRosVector(TargetContactVector);
     CollisionInfo.TargetInertia = FVector(1, 1, 1);
-    CollisionInfo.Normal = FVector::ZeroVector;  // Normal計算は別途対応？
+    // ★★★ 2026-10-04: 法線を入れる。0 のままだとプラント（drone-core も swarm_app も）は力積を出せず、
+    //   **衝突が一度も効いていなかった**。最も近い点 → 機体の中心の向きは、その点での接触面の法線になる。
+    //   最も近い点が取れなかった（中心が相手の中に入った）ときは、相手の中心 → 機体の中心で代える。
+    FVector NormalUnreal = (Distance >= 0.0f) ? (SelfPos - ContactPoint) : (SelfPos - TargetPos);
+    if (NormalUnreal.SizeSquared() < Epsilon * Epsilon)
+    {
+        NormalUnreal = -SelfContactVector;
+    }
+    CollisionInfo.Normal = ConvertToRosVector(NormalUnreal).GetSafeNormal();
     CollisionInfo.TargetMass = 1.0;
-    CollisionInfo.RestitutionCoefficient = 1.0;
+    CollisionInfo.RestitutionCoefficient = RestitutionCoefficient;
 
     UE_LOG(LogTemp, Log, TEXT("Collision! ROS vector: %s"), *CollisionInfo.SelfContactVector.ToString());
 }
