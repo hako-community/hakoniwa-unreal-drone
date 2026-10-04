@@ -64,6 +64,25 @@ PIE を始めたらビューポートを一度クリックします。START ボ�
   割り当ては `Config/DefaultInput.ini` の `[/Script/GameInputBase.GameInputDeveloperSettings]` に機種（VID/PID）ごとに書きます。いまは HORIPAD mini4（PS4 互換）を登録しています。
 * エディタが前面にいないあいだは入力を中立にします（GameInput は背景では全軸 0 を送るため）。
 
+## オンラインの操作（AvatarShm・2026-10-04〜）
+
+オンラインの機体の物理は [hakoniwa-mujoco-drone](https://github.com/hako-community/hakoniwa-mujoco-drone) の `swarm_app` が計算し、ゲームパッドは同じリポジトリの送信機（`tools/rc_pdu_pub.py`）が読みます。
+
+```bash
+# Git Bash で（<work_git> は各リポジトリを並べた親フォルダ）
+cd <work_git>
+source hakoniwa-mujoco-drone/tools/local_sdk/env_windows.bash
+cd hakoniwa-mujoco-drone
+UNREAL=game bash tools/online_plant_run.bash      # エディタなしで AvatarShm を開く
+UNREAL=editor bash tools/online_plant_run.bash    # エディタで開く（PIE は自分で開始）
+```
+
+* 開いたら画面の **START をマウスで**押します。Unreal を閉じるとプラントも止まります。
+* ★ オンラインでは **Unreal はゲームパッドを読みません**（`AHakoniwaShmClient` の `bIgnoreGamepad`・既定 true）。
+  読ませると ○×△□ が画面の START / STOP / RESET を押し、スティックが視点を回してしまいます。
+* 操作（HORIPAD mini4）: アームは両スティックを内側下へ（左は右下・右は左下）1 秒・△ でモード切替（GPS ⇔ ATTI）。
+* 衝突は `DroneCollisionComponent` が法線つきで `impulse` に書き、プラントが跳ね返します（反発係数 `RestitutionCoefficient`・既定 0.5）。
+
 ## 主要な Blueprint / コンポーネント
 
 - `BP_HakoniwaAvatar` — ドローン本体を表すブループリント。

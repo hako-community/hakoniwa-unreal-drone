@@ -69,6 +69,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Collision")
     bool bIsHakoniwa = true;
 
+    // ★ 2026-10-04: 相手の反発係数（0..1）。以前は 1.0 の決め打ちだった（courses と同じ 0.5 を既定にする）
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Collision")
+    double RestitutionCoefficient = 0.5;
+
     UPROPERTY(BlueprintReadOnly, Category = "Collision")
     FDroneImpulseCollision CollisionInfo;
 

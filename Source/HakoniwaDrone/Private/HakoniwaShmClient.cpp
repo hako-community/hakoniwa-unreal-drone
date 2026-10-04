@@ -1,4 +1,6 @@
 #include "HakoniwaShmClient.h"
+#include "Framework/Application/IInputProcessor.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Modules/ModuleManager.h"
 #include "HakoCapiCompat.h"   // ★ Win64 だけ hako_capi.h（共有メモリ）・Android は代用品（A1）
 #include "HakoniwaObjectInterface.h"
@@ -225,9 +227,30 @@ AHakoniwaShmClient::AHakoniwaShmClient()
     PrimaryActorTick.bCanEverTick = true;
 }
 
+namespace
+{
+/// ★ 2026-10-04: ゲームパッドのキーとスティックを、UI（画面のボタン）と視点に届く前に捨てる。
+class FHakoGamepadBlocker : public IInputProcessor
+{
+public:
+    virtual void Tick(const float, FSlateApplication&, TSharedRef<ICursor>) override {}
+    virtual bool HandleKeyDownEvent(FSlateApplication&, const FKeyEvent& E) override { return E.GetKey().IsGamepadKey(); }
+    virtual bool HandleKeyUpEvent(FSlateApplication&, const FKeyEvent& E) override { return E.GetKey().IsGamepadKey(); }
+    virtual bool HandleAnalogInputEvent(FSlateApplication&, const FAnalogInputEvent& E) override { return E.GetKey().IsGamepadKey(); }
+    virtual const TCHAR* GetDebugName() const override { return TEXT("HakoGamepadBlocker"); }
+};
+}
+
 void AHakoniwaShmClient::BeginPlay()
 {
     Super::BeginPlay();
+
+    if (bIgnoreGamepad && FSlateApplication::IsInitialized())
+    {
+        GamepadBlocker = MakeShared<FHakoGamepadBlocker>();
+        FSlateApplication::Get().RegisterInputPreProcessor(GamepadBlocker);
+        UE_LOG(LogTemp, Log, TEXT("AHakoniwaShmClient: gamepad input is ignored (bIgnoreGamepad). The external sender (rc_pdu_pub.py) reads the pad."));
+    }
 
     UE_LOG(LogTemp, Log, TEXT("AHakoniwaShmClient BeginPlay()"));
 
@@ -253,6 +276,11 @@ void AHakoniwaShmClient::BeginPlay()
 
 void AHakoniwaShmClient::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    if (GamepadBlocker.IsValid() && FSlateApplication::IsInitialized())
+    {
+        FSlateApplication::Get().UnregisterInputPreProcessor(GamepadBlocker);   // ★ エディタの PIE のあとに残さない
+    }
+    GamepadBlocker.Reset();
     StopTimeSyncWorker();
     if (pduManager && service && service->IsServiceEnabled())
     {
