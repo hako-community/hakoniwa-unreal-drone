@@ -91,14 +91,14 @@ bool UDroneControlLocalInput::JustPressed(const FKey& Pad, const FKey& Key) cons
 {
 	const APlayerController* PC = GetPlayerController();
 	if (PC == nullptr) return false;
-	return PC->WasInputKeyJustPressed(Pad) || (bEnableKeyboard && Key.IsValid() && PC->WasInputKeyJustPressed(Key));
+	return (Pad.IsValid() && PC->WasInputKeyJustPressed(Pad)) || (bEnableKeyboard && Key.IsValid() && PC->WasInputKeyJustPressed(Key));
 }
 
 bool UDroneControlLocalInput::JustReleased(const FKey& Pad, const FKey& Key) const
 {
 	const APlayerController* PC = GetPlayerController();
 	if (PC == nullptr) return false;
-	return PC->WasInputKeyJustReleased(Pad) || (bEnableKeyboard && Key.IsValid() && PC->WasInputKeyJustReleased(Key));
+	return (Pad.IsValid() && PC->WasInputKeyJustReleased(Pad)) || (bEnableKeyboard && Key.IsValid() && PC->WasInputKeyJustReleased(Key));
 }
 
 // ★ PDU と同じ約束: 左 X = 上下（上が +）・左 Y = ヨー（右が +）。Unreal のスティックは上・右が +。
@@ -119,8 +119,10 @@ FVector2D UDroneControlLocalInput::GetRightStickInput_Implementation()
 	return FVector2D(MoveFB, MoveLR);
 }
 
-bool UDroneControlLocalInput::IsAButtonPressed_Implementation() { return JustPressed(EKeys::Gamepad_FaceButton_Bottom, EKeys::SpaceBar); }
-bool UDroneControlLocalInput::IsAButtonReleased_Implementation() { return JustReleased(EKeys::Gamepad_FaceButton_Bottom, EKeys::SpaceBar); }
+// 2026-10-04: arm/disarm toggle is keyboard Space only. Gamepad arms with the stick gesture (both sticks inward-down 1 s)
+// like courses and the online plant; the gamepad A (PS: cross) no longer toggles arm (keyboard alone cannot do the gesture).
+bool UDroneControlLocalInput::IsAButtonPressed_Implementation() { return JustPressed(EKeys::Invalid, EKeys::SpaceBar); }
+bool UDroneControlLocalInput::IsAButtonReleased_Implementation() { return JustReleased(EKeys::Invalid, EKeys::SpaceBar); }
 bool UDroneControlLocalInput::IsBButtonPressed_Implementation() { return JustPressed(EKeys::Gamepad_FaceButton_Right, EKeys::B); }
 bool UDroneControlLocalInput::IsBButtonReleased_Implementation() { return JustReleased(EKeys::Gamepad_FaceButton_Right, EKeys::B); }
 bool UDroneControlLocalInput::IsXButtonPressed_Implementation() { return JustPressed(EKeys::Gamepad_FaceButton_Left, EKeys::M); }
