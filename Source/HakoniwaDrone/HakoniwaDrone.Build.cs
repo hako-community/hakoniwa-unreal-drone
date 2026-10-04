@@ -47,7 +47,7 @@ public class HakoniwaDrone : ModuleRules
             "UMG",
         });
 
-		PrivateDependencyModuleNames.AddRange(new string[] {  });
+		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });   // ★ 2026-10-04: ゲームパッドを捨てる入力の前処理（HakoniwaShmClient）
         // ★ 2026-10-03（A1）: Android では hakoniwa-pdu-registry のヘッダが Unreal の型と衝突する・C の版の判定で
         //   未定義の識別子の警告（エラー扱い）になる。サブモジュールは変えずに、ここで避ける（HakoPduTypesCompat.h）。
         if (Target.Platform == UnrealTargetPlatform.Android)

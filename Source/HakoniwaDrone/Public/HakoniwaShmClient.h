@@ -9,6 +9,7 @@
 
 class FHakoniwaTimeSyncWorker;
 class FRunnableThread;
+class IInputProcessor;
 
 UCLASS(Blueprintable, BlueprintType)
 class HAKONIWADRONE_API AHakoniwaShmClient : public AActor, public IHakoniwaClientInterface
@@ -36,6 +37,13 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hakoniwa|Time Sync", meta = (ClampMin = "1", ClampMax = "20"))
     int32 TimeSyncIntervalMsec = 5;
 
+    /// ★ 2026-10-04: オンライン（共有メモリ）では**ゲームパッドを Unreal に読ませない**。
+    ///   機体はプラント（swarm_app / drone-core）が動かし、ゲームパッドは外の送信機（rc_pdu_pub.py）が読む。
+    ///   Unreal も読むと、○×△□ が画面の START / STOP / RESET ボタンを押してしまい（UI のゲームパッド操作）、
+    ///   スティックは視点を回す（「ぐるぐる画面が回るだけでドローンが飛ばない」）。キーボードとマウスはそのまま。
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hakoniwa")
+    bool bIgnoreGamepad = true;
+
     virtual void Start_Implementation() override;
     virtual void Stop_Implementation() override;
     virtual void Reset_Implementation() override;
@@ -58,6 +66,7 @@ private:
     UPduManager* pduManager = nullptr;
 
     FHakoniwaTimeSyncWorker* TimeSyncWorker = nullptr;
+    TSharedPtr<IInputProcessor> GamepadBlocker;
     FRunnableThread* TimeSyncThread = nullptr;
 
     bool EnsureRuntimeObjects();
