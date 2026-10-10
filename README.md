@@ -121,3 +121,4 @@ JSON 形式の実行時設定は `Content/Config` に集約しています。ク
 ## ライセンス
 
 本リポジトリは MIT License の下で公開されています。詳細は `LICENSE` ファイルを参照してください。
+Hakoniwa Lab, LLC 版を基にした部分の著作権表示は `THIRD_PARTY_NOTICES.md` を参照してください。
