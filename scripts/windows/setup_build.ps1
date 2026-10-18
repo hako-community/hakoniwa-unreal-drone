@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter()]
     [string]$EngineRoot,
@@ -79,7 +79,10 @@ function Set-SdkEnvironmentFromRoot {
 
     $resolvedRoot = (Resolve-Path -LiteralPath $Root).Path
     if ($Sdk -eq 'Core') {
-        $env:HAKO_CORE_INC_PATH = Join-Path $resolvedRoot 'include'
+        # drone のローカル SDK（hakoniwa-core-pro の install）は include\hakoniwa に hako_capi.h がある
+        $inc = Join-Path $resolvedRoot 'include'
+        if (Test-Path (Join-Path $inc 'hakoniwa\hako_capi.h')) { $inc = Join-Path $inc 'hakoniwa' }
+        $env:HAKO_CORE_INC_PATH = $inc
         $env:HAKO_CORE_LIB_PATH = Join-Path $resolvedRoot 'lib'
         $env:HAKO_CORE_DLL_PATH = Join-Path $resolvedRoot 'bin'
         Write-Step "Core SDK environment set for this process: $resolvedRoot"
@@ -109,6 +112,11 @@ $pduRegistryHeader = Join-Path $projectRoot 'Plugins\HakoniwaPdu\Source\ThirdPar
 Assert-File -Path $pluginDescriptor -Description 'HakoniwaPdu plugin descriptor'
 Assert-File -Path $pduRegistryHeader -Description 'hakoniwa-pdu-registry submodule'
 
+# 既定：環境変数が無ければ、作業ルートの drone 用ローカル SDK（<work_git>\devai_drone\sdk\windows-msvc-x64\hakoniwa-core）を使う
+if ([string]::IsNullOrWhiteSpace($CoreSdkRoot) -and [string]::IsNullOrWhiteSpace($env:HAKO_CORE_LIB_PATH)) {
+    $droneSdk = Join-Path $projectRoot '..\..\devai_drone\sdk\windows-msvc-x64\hakoniwa-core'
+    if (Test-Path (Join-Path $droneSdk 'bin\shakoc.dll')) { $CoreSdkRoot = $droneSdk }
+}
 Set-SdkEnvironmentFromRoot -Root $CoreSdkRoot -Sdk Core
 
 $defaultCoreRoot = Join-Path $env:APPDATA 'hakoCore-win'
