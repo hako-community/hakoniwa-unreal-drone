@@ -47,7 +47,7 @@ Binaries/
     shakoc.dll
 ```
 
-実行時のDLLローダーも、環境変数、標準配置、ビルド時に解決したディレクトリ、リポジトリ内配置の順で `shakoc.dll` を探索します。
+実行時のDLLローダーは、`HAKO_CORE_DLL_PATH`、ビルド時に解決したディレクトリ、標準配置、リポジトリ内配置の順で `shakoc.dll` を探索します。ビルド時のディレクトリを標準配置より先に見るのは、環境変数なしで開いたときに、ビルドに使っていない別の SDK の DLL を読まないためです。
 
 ## hakodrone の取得
 
@@ -72,7 +72,7 @@ Windowsでは、リポジトリルートから次のスクリプトを実行す�
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\setup_build.ps1
 ```
 
-スクリプトは `HAKO_*_PATH` 環境変数、標準インストール先、リポジトリ内フォールバックの順で `shakoc` を検証し、`hakodrone` を取得します。`-CoreSdkRoot` を指定した場合は、そのルートからプロセスローカルの `HAKO_CORE_*_PATH` を設定してビルドします。
+スクリプトは `HAKO_*_PATH` 環境変数、標準インストール先、リポジトリ内フォールバックの順で `shakoc` を検証し、`hakodrone` を取得します。`-CoreSdkRoot` を指定した場合は、そのルートからプロセスローカルの `HAKO_CORE_*_PATH` を設定してビルドします。`-CoreSdkRoot` も `HAKO_CORE_LIB_PATH` も無いときは、作業ルートの drone 用ローカル SDK（`..\..\devai_drone\sdk\windows-msvc-x64\hakoniwa-core`）があればそれを使います。ヘッダが `include\hakoniwa` にある SDK にも対応します。
 
 ```text
 Core SDK:  %APPDATA%\hakoCore-win

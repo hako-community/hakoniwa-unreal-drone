@@ -335,6 +335,32 @@ HD_API int hd_apply_impulse(hd_sim* h, int idx,
                             double ox, double oy, double oz,
                             double duration_s);
 
+/** ★★★★ 2026-10-04（1.3.0）: 外の当たり判定から届いた**接触 1 回**（壁・ゲート・荷物）。
+ *  ★ 座標は **hd_state と同じ**（x=北 / y=東 / **z=上**）。 */
+typedef struct {
+    double cx, cy, cz;        /* 機体中心 → 接触点 [m] */
+    double nx, ny, nz;        /* 接触面の法線（★ 向きはどちらでもよい。長さも問わない） */
+    double restitution;       /* 反発係数 0..1（0 = くっつく・1 = 跳ね返る） */
+    int    target_static;     /* 1 = 相手は動かない物（壁・ゲート）。以下の相手の値は使わない */
+    double tvx, tvy, tvz;     /* 相手の速度 [m/s] */
+    double twx, twy, twz;     /* 相手の角速度 [rad/s] */
+    double tcx, tcy, tcz;     /* 相手の中心 → 接触点 [m] */
+    double tix, tiy, tiz;     /* 相手の主慣性 [kg·m²]（世界の軸として扱う）。0 以下なら回らない */
+    double tmass;             /* 相手の質量 [kg]。0 以下なら動かない物として扱う */
+} hd_contact;
+
+/** ★★★★ 2026-10-04（1.3.0）: 接触 1 回を**剛体の衝突として力積に直して**与える。
+ *
+ * `hd_apply_impulse` は「力積そのもの」を渡す口。こちらは「どこに・どの向きで・何と当たったか」を渡すと、
+ * 機体の質量・慣性・いまの速度から力積を出して与える（反発係数つき）。
+ * ★★★ **離れていく途中の接触と、5 cm/s より遅く触れているだけの接触には何もしない**（壁から離れようとしている機体を押し戻さない）。
+ * ★ 箱庭のプラント（swarm_app）が `impulse` PDU を受けたときと**同じ式**（`sim/contact_impulse.hpp`）。
+ *   オフライン（hakodrone）とオンライン（箱庭）で、ぶつかったときの動きが揃う。
+ *
+ * @param impulse_out 与えた力積 [N·s]（3 個・hd_state の座標）。不要なら NULL。
+ * @return HD_OK = 与えた ／ 1 = 何もしなかった（離れていく途中・触れているだけ・法線が 0）／ HD_ERROR。 */
+HD_API int hd_apply_contact(hd_sim* h, int idx, const hd_contact* c, double* impulse_out);
+
 /* ★ D2: 飛んだ軌跡を記録する（教材で「書いて・飛んで・**見る**」を成立させるため）。
  *   記録した CSV は `replay_viz_app` が箱庭 PDU に流し、Godot で再生できる。
  *   ★ Python 側は API がループを持つので、箱庭のアセット周期に乗せられない。
